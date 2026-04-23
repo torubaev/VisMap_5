@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+
+# Generated VisMap / Multiwfn artifacts
+*.cub
+*.cube
+*.out
+*_sa_*.txt
+surfanalysis.txt
