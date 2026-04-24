@@ -1171,7 +1171,8 @@ def process_selected_file(selected_inputfile, selected_nproc="4", selected_mode=
 # GUI
 # ----------------------------
 
-def launch_gui():
+def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", initial_vis="y",
+               initial_pregen=False, initial_cpisov=None, initial_multiwfn=None, autorun=False):
     root = tk.Tk()
     APP_STATE["root"] = root
     root.title("VisMap GUI")
@@ -1209,6 +1210,8 @@ def launch_gui():
     tk.Label(input_box, text="Input wavefunction file (.wfn / .wfx / .fchk)", font=subsection_font).grid(row=0, column=0, sticky="w")
     entry_file = tk.Entry(input_box, width=110, relief="solid", bd=1)
     entry_file.grid(row=1, column=0, padx=(0, 10), pady=(4, 10), sticky="we")
+    if initial_inputfile:
+        entry_file.insert(0, os.path.abspath(initial_inputfile))
 
     def browse_file():
         f = filedialog.askopenfilename(
@@ -1224,7 +1227,7 @@ def launch_gui():
     tk.Label(input_box, text="Multiwfn executable", font=subsection_font).grid(row=2, column=0, sticky="w")
     entry_mwfn = tk.Entry(input_box, width=110, relief="solid", bd=1)
     entry_mwfn.grid(row=3, column=0, padx=(0, 10), pady=(4, 0), sticky="we")
-    entry_mwfn.insert(0, r"C:/Multiwfn_2026.2.2_bin_Win64/Multiwfn.exe")
+    entry_mwfn.insert(0, initial_multiwfn or r"C:/Multiwfn_2026.2.2_bin_Win64/Multiwfn.exe")
 
     def browse_mwfn():
         f = filedialog.askopenfilename(title="Select Multiwfn.exe", filetypes=[("Executable", "*.exe"), ("All files", "*.*")])
@@ -1246,26 +1249,26 @@ def launch_gui():
     tk.Label(calc_grid, text="nproc", font=subsection_font).grid(row=0, column=0, sticky="w")
     entry_nproc = tk.Entry(calc_grid, width=10, relief="solid", bd=1)
     entry_nproc.grid(row=1, column=0, padx=(0, 10), sticky="w")
-    entry_nproc.insert(0, "8")
+    entry_nproc.insert(0, initial_nproc or "8")
 
     tk.Label(calc_grid, text="Mode", font=subsection_font).grid(row=0, column=1, sticky="w")
-    mode_var = tk.StringVar(value="old")
+    mode_var = tk.StringVar(value=initial_mode or "old")
     tk.OptionMenu(calc_grid, mode_var, "old", "new").grid(row=1, column=1, padx=(0, 10), sticky="w")
 
     tk.Label(calc_grid, text="Visualization", font=subsection_font).grid(row=0, column=2, sticky="w")
-    vis_var = tk.StringVar(value="y")
+    vis_var = tk.StringVar(value=initial_vis or "y")
     tk.OptionMenu(calc_grid, vis_var, "y", "n").grid(row=1, column=2, sticky="w")
 
     cp_box = tk.LabelFrame(options, text="Critical point setup", padx=10, pady=8, font=subsection_font, labelanchor="nw")
     cp_box.grid(row=1, column=0, sticky="we", pady=(12, 0))
     cp_box.grid_columnconfigure(1, weight=1)
 
-    preg_var = tk.BooleanVar(value=False)
+    preg_var = tk.BooleanVar(value=bool(initial_pregen))
     tk.Checkbutton(cp_box, text="Pre-generate CP points", variable=preg_var).grid(row=0, column=0, columnspan=2, sticky="w")
     tk.Label(cp_box, text="CP isovalue").grid(row=1, column=0, sticky="w", pady=(8, 0))
     entry_cp = tk.Entry(cp_box, width=12, relief="solid", bd=1)
     entry_cp.grid(row=1, column=1, sticky="w", pady=(8, 0))
-    entry_cp.insert(0, "0.001")
+    entry_cp.insert(0, initial_cpisov or "0.001")
 
     action_box = tk.LabelFrame(frm, text="3. Viewer controls", padx=12, pady=12, font=section_font, labelanchor="nw")
     action_box.grid(row=1, column=1, sticky="nsew", pady=(0, 10))
@@ -1459,6 +1462,8 @@ def launch_gui():
 
     root.bind_all("<Control-c>", lambda _event: viewer_copy_to_clipboard())
     root.after(30, pump_viewer)
+    if autorun and initial_inputfile:
+        root.after(250, run_clicked)
     refresh_extrema_panel([])
     root.mainloop()
 
@@ -1489,14 +1494,15 @@ def run_from_cli(argv):
         elif item.startswith("-mwfn="):
             selected_multiwfn = item[6:]
 
-    process_selected_file(
-        selected_inputfile=selected_inputfile,
-        selected_nproc=selected_nproc,
-        selected_mode=selected_mode,
-        selected_vis=selected_vis,
-        selected_pregen=selected_pregen,
-        selected_cpisov=selected_cpisov,
-        selected_multiwfn=selected_multiwfn
+    launch_gui(
+        initial_inputfile=selected_inputfile,
+        initial_nproc=selected_nproc,
+        initial_mode=selected_mode,
+        initial_vis=selected_vis,
+        initial_pregen=selected_pregen,
+        initial_cpisov=selected_cpisov,
+        initial_multiwfn=selected_multiwfn,
+        autorun=True,
     )
 
 
