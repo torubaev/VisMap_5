@@ -238,12 +238,20 @@ def _get_screen_size():
 
 def _main_window_size():
     screen_w, screen_h = _get_screen_size()
-    return int(screen_w * 0.45), int(screen_h * 0.88)
+    width = int(screen_w * 0.95)
+    height = int(screen_h * 0.90)
+    width = min(width, 1400)
+    height = min(height, 950)
+    return width, height
 
 
 def _viewer_window_size():
     screen_w, screen_h = _get_screen_size()
-    return int(screen_w * 0.45), int(screen_h * 0.88)
+    width = int(screen_w * 0.95)
+    height = int(screen_h * 0.90)
+    width = min(width, 1400)
+    height = min(height, 950)
+    return width, height
 
 
 # ----------------------------
@@ -1176,8 +1184,6 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     root = tk.Tk()
     APP_STATE["root"] = root
     root.title("VisMap GUI")
-    gui_width, gui_height = _main_window_size()
-    root.geometry(f"{gui_width}x{gui_height}")
     root.resizable(True, True)
 
     base_font = tkfont.nametofont("TkDefaultFont").copy()
@@ -1197,8 +1203,36 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     root.option_add("*Entry.Font", base_font)
     root.option_add("*Text.Font", mono_font)
 
-    frm = tk.Frame(root, padx=12, pady=12)
-    frm.pack(fill="both", expand=True)
+    screen_w, screen_h = _get_screen_size()
+    gui_width, gui_height = _main_window_size()
+    gui_width = min(gui_width, max(screen_w - 40, 600))
+    gui_height = min(gui_height, max(screen_h - 80, 500))
+    x = max((screen_w - gui_width) // 2, 0)
+    y = max((screen_h - gui_height) // 2, 0)
+    root.geometry(f"{gui_width}x{gui_height}+{x}+{y}")
+    root.minsize(700, 600)
+    root.maxsize(screen_w, screen_h)
+
+    canvas = tk.Canvas(root, borderwidth=0, highlightthickness=0)
+    vscroll = tk.Scrollbar(root, orient="vertical", command=canvas.yview)
+    hscroll = tk.Scrollbar(root, orient="horizontal", command=canvas.xview)
+    canvas.configure(yscrollcommand=vscroll.set, xscrollcommand=hscroll.set)
+    vscroll.pack(side="right", fill="y")
+    hscroll.pack(side="bottom", fill="x")
+    canvas.pack(side="left", fill="both", expand=True)
+
+    frm = tk.Frame(canvas, padx=12, pady=12)
+    frm_id = canvas.create_window((0, 0), window=frm, anchor="nw")
+
+    def on_frame_configure(event):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def on_canvas_configure(event):
+        canvas.itemconfigure(frm_id, width=event.width)
+
+    frm.bind("<Configure>", on_frame_configure)
+    canvas.bind("<Configure>", on_canvas_configure)
+
     frm.grid_columnconfigure(0, weight=1, uniform="top")
     frm.grid_columnconfigure(1, weight=1, uniform="top")
     frm.grid_rowconfigure(3, weight=1)
