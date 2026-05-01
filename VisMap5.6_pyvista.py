@@ -247,6 +247,21 @@ def _main_window_size():
 
 def _viewer_window_size():
     screen_w, screen_h = _get_screen_size()
+    root = APP_STATE.get("root")
+    if root is not None:
+        try:
+            root.update_idletasks()
+            gui_x = int(root.winfo_rootx())
+            gui_y = int(root.winfo_rooty())
+            gui_w = int(root.winfo_width())
+            gui_h = int(root.winfo_height())
+            width = max(screen_w - (gui_x + gui_w) - 28, 720)
+            height = min(max(gui_h, 700), max(screen_h - gui_y - 40, 500))
+            width = min(width, max(screen_w - 40, 720))
+            height = min(height, 950)
+            return width, height
+        except Exception:
+            pass
     width = int(screen_w * 0.95)
     height = int(screen_h * 0.90)
     width = min(width, 1400)
@@ -485,6 +500,7 @@ def pump_viewer():
             if plotter is None or getattr(plotter, "ren_win", None) is None:
                 _cleanup_viewer_state()
             else:
+                _set_scalar_bar_style(plotter)
                 plotter.update()
         except Exception:
             _cleanup_viewer_state()
@@ -635,9 +651,27 @@ def _set_scalar_bar_style(plotter):
         label_prop = scalar_bar.GetLabelTextProperty()
         title_prop.BoldOn()
         label_prop.BoldOn()
-        title_prop.SetFontSize(24)
-        label_prop.SetFontSize(20)
+        title_prop.SetFontSize(20)
+        label_prop.SetFontSize(16)
         title_prop.SetVerticalJustificationToBottom()
+        try:
+            scalar_bar.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+        except Exception:
+            pass
+        try:
+            scalar_bar.SetPosition(0.88, 0.10)
+            scalar_bar.SetWidth(0.07)
+            scalar_bar.SetHeight(0.80)
+        except Exception:
+            pass
+        try:
+            scalar_bar.SetTextPositionToPrecedeScalarBar()
+        except Exception:
+            pass
+        try:
+            scalar_bar.SetUnconstrainedFontSize(False)
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -924,6 +958,20 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
 
     viewer_width, viewer_height = _viewer_window_size()
     plotter = pv.Plotter(window_size=(viewer_width, viewer_height))
+
+    def _position_viewer_window():
+        root = APP_STATE.get("root")
+        if root is None:
+            return
+        try:
+            root.update_idletasks()
+            viewer_x = int(root.winfo_rootx() + root.winfo_width() + 12)
+            viewer_y = int(root.winfo_rooty())
+            ren_win = getattr(plotter, "ren_win", None)
+            if ren_win is not None:
+                ren_win.SetPosition(viewer_x, viewer_y)
+        except Exception:
+            pass
     try:
         plotter.enable_anti_aliasing("msaa")
     except Exception:
@@ -970,12 +1018,12 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
             scalar_bar_args={
                 "title": "ESP, kcal/mol\n\n\n",
                 "vertical": True,
-                "position_x": 0.02,
-                "position_y": 0.07,
-                "width": 0.08,
-                "height": 0.86,
-                "title_font_size": 26,
-                "label_font_size": 22,
+                "position_x": 0.88,
+                "position_y": 0.10,
+                "width": 0.07,
+                "height": 0.80,
+                "title_font_size": 20,
+                "label_font_size": 16,
                 "n_labels": 5,
                 "fmt": "%.1f",
                 "color": label_color,
@@ -1068,7 +1116,15 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
                     ctrl = 0
                 if ctrl and str(key).lower() == "c":
                     viewer_copy_to_clipboard()
+
+            def _resize_observer(_obj=None, _event=None):
+                _set_scalar_bar_style(plotter)
+
             vtk_interactor.AddObserver("KeyPressEvent", _ctrl_c_observer)
+            vtk_interactor.AddObserver("ConfigureEvent", _resize_observer)
+            ren_win = getattr(plotter, "ren_win", None)
+            if ren_win is not None:
+                ren_win.AddObserver("ModifiedEvent", _resize_observer)
         else:
             plotter.add_key_event("c", viewer_copy_to_clipboard)
     except Exception:
@@ -1082,6 +1138,11 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         plotter.show(title="VisMap PyVista Viewer", auto_close=False)
     else:
         plotter.show(title="VisMap PyVista Viewer", auto_close=False, interactive_update=True)
+        _position_viewer_window()
+        try:
+            APP_STATE["root"].after(120, _position_viewer_window)
+        except Exception:
+            pass
         sync_main_controls_from_viewer()
         refresh_extrema_panel([])
 
@@ -1196,32 +1257,76 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     emphasis_font.configure(weight="bold")
     mono_font = tkfont.Font(family="Courier New", size=10)
 
+    app_bg = "#f4f6f9"
+    panel_bg = "#f8fafc"
+    border_color = "#d8dee8"
+    text_fg = "#263348"
+    title_fg = "#172033"
+    muted_fg = "#53627a"
+    action_bg = "#2a4b75"
+    action_active = "#345986"
+    action_fg = "#f8fafc"
+    accent_bg = "#1e3a5f"
+    accent_fg = "#d7e1ee"
+
+    root.configure(background=app_bg)
+
     root.option_add("*Font", base_font)
     root.option_add("*LabelFrame.Font", section_font)
     root.option_add("*Button.Font", base_font)
     root.option_add("*Checkbutton.Font", base_font)
     root.option_add("*Entry.Font", base_font)
     root.option_add("*Text.Font", mono_font)
+    root.option_add("*Label.Background", panel_bg)
+    root.option_add("*Label.Foreground", text_fg)
+    root.option_add("*LabelFrame.Background", panel_bg)
+    root.option_add("*LabelFrame.Foreground", title_fg)
+    root.option_add("*Frame.Background", panel_bg)
+    root.option_add("*Button.Background", "#eef2f6")
+    root.option_add("*Button.Foreground", text_fg)
+    root.option_add("*Button.ActiveBackground", "#e4eaf1")
+    root.option_add("*Button.ActiveForeground", text_fg)
+    root.option_add("*Button.Relief", "flat")
+    root.option_add("*Checkbutton.Background", panel_bg)
+    root.option_add("*Checkbutton.Foreground", text_fg)
+    root.option_add("*Checkbutton.ActiveBackground", panel_bg)
+    root.option_add("*Checkbutton.SelectColor", panel_bg)
+    root.option_add("*Entry.Background", "#ffffff")
+    root.option_add("*Entry.Foreground", text_fg)
+    root.option_add("*Entry.InsertBackground", text_fg)
+    root.option_add("*Text.Background", "#ffffff")
+    root.option_add("*Text.Foreground", text_fg)
+    root.option_add("*Text.InsertBackground", text_fg)
+    root.option_add("*Scale.Background", panel_bg)
+    root.option_add("*Scale.Foreground", text_fg)
+    root.option_add("*Scale.troughColor", "#d7e1ee")
 
     screen_w, screen_h = _get_screen_size()
-    gui_width, gui_height = _main_window_size()
+    gui_width = max(int(screen_w * 0.40), 720)
+    gui_height = max(int(screen_h * 0.90), 700)
     gui_width = min(gui_width, max(screen_w - 40, 600))
-    gui_height = min(gui_height, max(screen_h - 80, 500))
-    x = max((screen_w - gui_width) // 2, 0)
+    gui_height = min(gui_height, max(screen_h - 40, 500))
+    x = 20 if screen_w - gui_width > 40 else max(screen_w - gui_width, 0)
     y = max((screen_h - gui_height) // 2, 0)
     root.geometry(f"{gui_width}x{gui_height}+{x}+{y}")
-    root.minsize(700, 600)
+    root.minsize(720, 700)
     root.maxsize(screen_w, screen_h)
 
-    canvas = tk.Canvas(root, borderwidth=0, highlightthickness=0)
-    vscroll = tk.Scrollbar(root, orient="vertical", command=canvas.yview)
-    hscroll = tk.Scrollbar(root, orient="horizontal", command=canvas.xview)
-    canvas.configure(yscrollcommand=vscroll.set, xscrollcommand=hscroll.set)
+    header = tk.Frame(root, bg=accent_bg, padx=14, pady=10)
+    header.pack(side="top", fill="x")
+    tk.Label(header, text="VisMap", bg=accent_bg, fg="#f8fafc", font=("Segoe UI", 15, "bold")).grid(row=0, column=0, sticky="w")
+    tk.Label(header, text="ESP and density visualization from wavefunction files", bg=accent_bg, fg=accent_fg, font=("Segoe UI", 9)).grid(row=1, column=0, sticky="w")
+
+    content_host = tk.Frame(root, background=app_bg)
+    content_host.pack(side="top", fill="both", expand=True)
+
+    canvas = tk.Canvas(content_host, borderwidth=0, highlightthickness=0, background=app_bg)
+    vscroll = tk.Scrollbar(content_host, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vscroll.set)
     vscroll.pack(side="right", fill="y")
-    hscroll.pack(side="bottom", fill="x")
     canvas.pack(side="left", fill="both", expand=True)
 
-    frm = tk.Frame(canvas, padx=12, pady=12)
+    frm = tk.Frame(canvas, padx=12, pady=12, background=app_bg)
     frm_id = canvas.create_window((0, 0), window=frm, anchor="nw")
 
     def on_frame_configure(event):
@@ -1233,17 +1338,18 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     frm.bind("<Configure>", on_frame_configure)
     canvas.bind("<Configure>", on_canvas_configure)
 
-    frm.grid_columnconfigure(0, weight=1, uniform="top")
-    frm.grid_columnconfigure(1, weight=1, uniform="top")
+    frm.grid_columnconfigure(0, weight=5)
+    frm.grid_columnconfigure(1, weight=4)
     frm.grid_rowconfigure(3, weight=1)
 
     input_box = tk.LabelFrame(frm, text="1. Input and execution", padx=12, pady=12, font=section_font, labelanchor="nw")
-    input_box.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
+    input_box.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 12))
     input_box.grid_columnconfigure(0, weight=1)
+    input_box.grid_columnconfigure(2, weight=0)
 
     tk.Label(input_box, text="Input wavefunction file (.wfn / .wfx / .fchk)", font=subsection_font).grid(row=0, column=0, sticky="w")
-    entry_file = tk.Entry(input_box, width=110, relief="solid", bd=1)
-    entry_file.grid(row=1, column=0, padx=(0, 10), pady=(4, 10), sticky="we")
+    entry_file = tk.Entry(input_box, width=88, relief="solid", bd=1)
+    entry_file.grid(row=1, column=0, padx=(0, 10), pady=(4, 12), sticky="we")
     if initial_inputfile:
         entry_file.insert(0, os.path.abspath(initial_inputfile))
 
@@ -1256,57 +1362,46 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
             entry_file.delete(0, tk.END)
             entry_file.insert(0, f)
 
-    tk.Button(input_box, text="Browse...", command=browse_file, width=12).grid(row=1, column=1, sticky="w")
+    browse_file_btn = tk.Button(input_box, text="Browse...", command=browse_file, width=12)
+    browse_file_btn.grid(row=1, column=1, sticky="w")
 
     tk.Label(input_box, text="Multiwfn executable", font=subsection_font).grid(row=2, column=0, sticky="w")
-    entry_mwfn = tk.Entry(input_box, width=110, relief="solid", bd=1)
+    entry_mwfn = tk.Entry(input_box, width=88, relief="solid", bd=1)
     entry_mwfn.grid(row=3, column=0, padx=(0, 10), pady=(4, 0), sticky="we")
     entry_mwfn.insert(0, initial_multiwfn or r"C:/Multiwfn_2026.2.2_bin_Win64/Multiwfn.exe")
 
     def browse_mwfn():
-        f = filedialog.askopenfilename(title="Select Multiwfn.exe", filetypes=[("Executable", "*.exe"), ("All files", "*.*")])
+        f = filedialog.askopenfilename(title="Select Multiwfn executable", filetypes=[("Executable", "*.exe"), ("All files", "*.*")])
         if f:
             entry_mwfn.delete(0, tk.END)
             entry_mwfn.insert(0, f)
 
-    tk.Button(input_box, text="Browse...", command=browse_mwfn, width=12).grid(row=3, column=1, sticky="w")
+    browse_mwfn_btn = tk.Button(input_box, text="Browse...", command=browse_mwfn, width=12)
+    browse_mwfn_btn.grid(row=3, column=1, sticky="w")
 
-    options = tk.LabelFrame(frm, text="2. Calculation setup", padx=12, pady=12, font=section_font, labelanchor="nw")
-    options.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(0, 10))
-    options.grid_columnconfigure(0, weight=1)
+    def _build_run_icon():
+        icon = tk.PhotoImage(width=18, height=18)
+        icon.put("#123b6d", to=(0, 0, 18, 18))
+        icon.put("#1f5fa8", to=(2, 2, 16, 16))
+        icon.put("#5fd1ff", to=(4, 4, 14, 14))
+        icon.put("#ffffff", to=(5, 5, 13, 7))
+        icon.put("#ffffff", to=(8, 7, 10, 13))
+        icon.put("#ffffff", to=(5, 13, 13, 15))
+        return icon
 
-    calc_grid = tk.Frame(options)
-    calc_grid.grid(row=0, column=0, sticky="we")
-    for idx in range(3):
-        calc_grid.grid_columnconfigure(idx, weight=1)
+    run_icon = _build_run_icon()
+    APP_STATE["run_button_icon"] = run_icon
 
-    tk.Label(calc_grid, text="nproc", font=subsection_font).grid(row=0, column=0, sticky="w")
-    entry_nproc = tk.Entry(calc_grid, width=10, relief="solid", bd=1)
-    entry_nproc.grid(row=1, column=0, padx=(0, 10), sticky="w")
-    entry_nproc.insert(0, initial_nproc or "8")
+    default_nproc = initial_nproc or "8"
+    default_mode = initial_mode or "old"
+    default_vis = initial_vis or "y"
+    default_pregen = bool(initial_pregen)
+    default_cp = initial_cpisov or "0.001"
 
-    tk.Label(calc_grid, text="Mode", font=subsection_font).grid(row=0, column=1, sticky="w")
-    mode_var = tk.StringVar(value=initial_mode or "old")
-    tk.OptionMenu(calc_grid, mode_var, "old", "new").grid(row=1, column=1, padx=(0, 10), sticky="w")
-
-    tk.Label(calc_grid, text="Visualization", font=subsection_font).grid(row=0, column=2, sticky="w")
-    vis_var = tk.StringVar(value=initial_vis or "y")
-    tk.OptionMenu(calc_grid, vis_var, "y", "n").grid(row=1, column=2, sticky="w")
-
-    cp_box = tk.LabelFrame(options, text="Critical point setup", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    cp_box.grid(row=1, column=0, sticky="we", pady=(12, 0))
-    cp_box.grid_columnconfigure(1, weight=1)
-
-    preg_var = tk.BooleanVar(value=bool(initial_pregen))
-    tk.Checkbutton(cp_box, text="Pre-generate CP points", variable=preg_var).grid(row=0, column=0, columnspan=2, sticky="w")
-    tk.Label(cp_box, text="CP isovalue").grid(row=1, column=0, sticky="w", pady=(8, 0))
-    entry_cp = tk.Entry(cp_box, width=12, relief="solid", bd=1)
-    entry_cp.grid(row=1, column=1, sticky="w", pady=(8, 0))
-    entry_cp.insert(0, initial_cpisov or "0.001")
-
-    action_box = tk.LabelFrame(frm, text="3. Viewer controls", padx=12, pady=12, font=section_font, labelanchor="nw")
-    action_box.grid(row=1, column=1, sticky="nsew", pady=(0, 10))
+    action_box = tk.LabelFrame(frm, text="2. Viewer controls", padx=12, pady=12, font=section_font, labelanchor="nw")
+    action_box.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(0, 12))
     action_box.grid_columnconfigure(0, weight=1)
+    action_box.grid_columnconfigure(1, weight=1)
 
     APP_STATE["suggested_range_var"] = tk.StringVar(value="Suggested density range: n/a")
     APP_STATE["esp_range_hint_var"] = tk.StringVar(value="ESP data range: n/a")
@@ -1323,7 +1418,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     APP_STATE["label_color_var"] = tk.StringVar(value="white")
 
     surface_box = tk.LabelFrame(action_box, text="Surface", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    surface_box.grid(row=0, column=0, sticky="we")
+    surface_box.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=(0, 10))
     surface_box.grid_columnconfigure(1, weight=1)
 
     tk.Label(surface_box, text="Density isovalue", font=subsection_font).grid(row=0, column=0, sticky="w", pady=(0, 6))
@@ -1334,7 +1429,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     apply_btn.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=(0, 6))
 
     tk.Label(surface_box, text="Opacity", font=subsection_font).grid(row=1, column=0, sticky="w")
-    opacity_scale = tk.Scale(surface_box, from_=0, to=100, orient="horizontal", resolution=1, command=viewer_update_opacity, showvalue=True, length=260)
+    opacity_scale = tk.Scale(surface_box, from_=0, to=100, orient="horizontal", resolution=1, command=viewer_update_opacity, showvalue=True, length=210)
     opacity_scale.set(50)
     opacity_scale.grid(row=1, column=1, columnspan=2, sticky="we", pady=(0, 6))
     APP_STATE["opacity_scale"] = opacity_scale
@@ -1344,7 +1439,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     cmap_menu.grid(row=2, column=1, sticky="w")
 
     range_box = tk.LabelFrame(action_box, text="ESP scale bar", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    range_box.grid(row=1, column=0, sticky="we", pady=(10, 0))
+    range_box.grid(row=0, column=1, sticky="nsew", pady=(0, 10))
     range_box.grid_columnconfigure(1, weight=1)
 
     tk.Label(range_box, textvariable=APP_STATE["suggested_range_var"], font=emphasis_font, anchor="w", justify="left").grid(row=0, column=0, columnspan=3, sticky="w")
@@ -1362,8 +1457,8 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     esp_apply_btn.grid(row=2, column=2, rowspan=2, sticky="w", padx=(8, 0))
 
     appearance_box = tk.LabelFrame(action_box, text="Display options", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    appearance_box.grid(row=2, column=0, sticky="we", pady=(10, 0))
-    for idx in range(3):
+    appearance_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+    for idx in range(2):
         appearance_box.grid_columnconfigure(idx, weight=1)
 
     atoms_cb = tk.Checkbutton(appearance_box, text="Show atoms", variable=APP_STATE["show_atoms_var"], command=viewer_toggle_atoms)
@@ -1371,38 +1466,41 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     bonds_cb = tk.Checkbutton(appearance_box, text="Show bonds", variable=APP_STATE["show_bonds_var"], command=viewer_toggle_bonds)
     bonds_cb.grid(row=0, column=1, sticky="w")
     offset_cb = tk.Checkbutton(appearance_box, text="Molecule level-up mode", variable=APP_STATE["molecule_offset_var"], command=viewer_toggle_molecule_offset)
-    offset_cb.grid(row=0, column=2, sticky="w")
+    offset_cb.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
     bg_btn = tk.Button(appearance_box, text="Background color", command=viewer_choose_background_color, width=16)
-    bg_btn.grid(row=1, column=0, sticky="w", pady=(10, 0))
-    label_btn = tk.Button(appearance_box, text="Labels color", command=viewer_choose_label_color, width=14)
-    label_btn.grid(row=1, column=1, sticky="w", pady=(10, 0))
+    bg_btn.grid(row=2, column=0, sticky="w", pady=(10, 0))
+    label_btn = tk.Button(appearance_box, text="Labels color", command=viewer_choose_label_color, width=16)
+    label_btn.grid(row=2, column=1, sticky="w", pady=(10, 0))
 
     quick_box = tk.LabelFrame(action_box, text="Quick actions", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    quick_box.grid(row=3, column=0, sticky="we", pady=(10, 0))
-    for idx in range(4):
+    quick_box.grid(row=1, column=1, sticky="nsew")
+    for idx in range(2):
         quick_box.grid_columnconfigure(idx, weight=1)
 
-    save_btn = tk.Button(quick_box, text="Save as...", command=viewer_save_as, width=12)
-    save_btn.grid(row=0, column=0, sticky="w")
-    copy_btn = tk.Button(quick_box, text="Copy image", command=viewer_copy_to_clipboard, width=12)
-    copy_btn.grid(row=0, column=1, sticky="w")
-    reset_btn = tk.Button(quick_box, text="Reset view", command=viewer_reset, width=12)
-    reset_btn.grid(row=0, column=2, sticky="w")
-    close_btn = tk.Button(quick_box, text="Close viewer", command=close_viewer, width=12)
-    close_btn.grid(row=0, column=3, sticky="w")
+    save_btn = tk.Button(quick_box, text="Save as...", command=viewer_save_as, width=14)
+    save_btn.grid(row=0, column=0, sticky="we", padx=(0, 6), pady=(0, 6))
+    copy_btn = tk.Button(quick_box, text="Copy image", command=viewer_copy_to_clipboard, width=14)
+    copy_btn.grid(row=0, column=1, sticky="we", pady=(0, 6))
+    reset_btn = tk.Button(quick_box, text="Reset view", command=viewer_reset, width=14)
+    reset_btn.grid(row=1, column=0, sticky="we", padx=(0, 6))
+    close_btn = tk.Button(quick_box, text="Close viewer", command=close_viewer, width=14)
+    close_btn.grid(row=1, column=1, sticky="we")
 
-    main_area = tk.LabelFrame(frm, text="4. Extrema tools and values", padx=12, pady=12, font=section_font, labelanchor="nw")
+    main_area = tk.LabelFrame(frm, text="3. Extrema tools and values", padx=12, pady=12, font=section_font, labelanchor="nw")
     main_area.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
     main_area.grid_columnconfigure(0, weight=0)
     main_area.grid_columnconfigure(1, weight=1)
     main_area.grid_rowconfigure(0, weight=1)
 
-    left_tools = tk.Frame(main_area)
-    left_tools.grid(row=0, column=0, sticky="nsw", padx=(0, 12))
+    left_tools = tk.Frame(main_area, width=320)
+    left_tools.grid(row=0, column=0, sticky="nsw", padx=(0, 14))
+    left_tools.grid_propagate(False)
+    left_tools.grid_columnconfigure(0, weight=1)
+    left_tools.grid_columnconfigure(1, weight=1)
 
     extrema_actions = tk.LabelFrame(left_tools, text="Extrema actions", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    extrema_actions.grid(row=0, column=0, sticky="we")
+    extrema_actions.grid(row=0, column=0, sticky="nwe", padx=(0, 8))
     gen_btn = tk.Button(extrema_actions, text="Generate extrema", command=lambda: viewer_generate_extrema(False), width=18)
     gen_btn.grid(row=0, column=0, sticky="we", pady=(0, 6))
     scan_btn = tk.Button(extrema_actions, text="Scan near UA", command=lambda: viewer_generate_extrema(True), width=18)
@@ -1411,18 +1509,18 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     clear_btn.grid(row=2, column=0, sticky="we")
 
     filter_box = tk.LabelFrame(left_tools, text="Range filter", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    filter_box.grid(row=1, column=0, sticky="we", pady=(10, 0))
+    filter_box.grid(row=0, column=1, sticky="nwe")
     tk.Label(filter_box, text="Kill value", font=subsection_font).grid(row=0, column=0, sticky="w")
     kill_value_entry = tk.Entry(filter_box, textvariable=APP_STATE["kill_value_var"], width=12, relief="solid", bd=1)
     kill_value_entry.grid(row=1, column=0, sticky="w", pady=(0, 6))
-    tk.Label(filter_box, text="± range", font=subsection_font).grid(row=2, column=0, sticky="w")
+    tk.Label(filter_box, text="+/- range", font=subsection_font).grid(row=2, column=0, sticky="w")
     kill_pm_entry = tk.Entry(filter_box, textvariable=APP_STATE["kill_pm_var"], width=12, relief="solid", bd=1)
     kill_pm_entry.grid(row=3, column=0, sticky="w", pady=(0, 6))
     kill_btn = tk.Button(filter_box, text="Kill range", command=viewer_kill_range, width=18)
     kill_btn.grid(row=4, column=0, sticky="we")
 
     edit_box = tk.LabelFrame(left_tools, text="List editing", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    edit_box.grid(row=2, column=0, sticky="we", pady=(10, 0))
+    edit_box.grid(row=1, column=0, columnspan=2, sticky="we", pady=(10, 0))
     del_btn = tk.Button(edit_box, text="Delete selected lines", command=viewer_delete_selected_extrema, width=18)
     del_btn.grid(row=0, column=0, sticky="we", pady=(0, 6))
     sync_btn = tk.Button(edit_box, text="Apply edited list", command=viewer_apply_edited_extrema, width=18)
@@ -1431,11 +1529,16 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     right_panel = tk.Frame(main_area)
     right_panel.grid(row=0, column=1, sticky="nsew")
     right_panel.grid_columnconfigure(0, weight=1)
-    right_panel.grid_rowconfigure(1, weight=1)
+    right_panel.grid_rowconfigure(2, weight=1)
 
     tk.Label(right_panel, text="Editable extrema list", font=subsection_font).grid(row=0, column=0, sticky="w")
-    tk.Label(right_panel, text="Delete lines or edit values, then click 'Apply edited list'.").grid(row=1, column=0, sticky="w", pady=(2, 8))
-    extrema_text = tk.Text(right_panel, width=90, height=20, wrap="none", relief="solid", bd=1)
+    tk.Label(
+        right_panel,
+        text="Edit values or remove lines, then apply the updated list to refresh the viewer.",
+        justify="left",
+        wraplength=640,
+    ).grid(row=1, column=0, sticky="w", pady=(2, 8))
+    extrema_text = tk.Text(right_panel, width=84, height=24, wrap="none", relief="solid", bd=1)
     extrema_text.grid(row=2, column=0, sticky="nsew")
     APP_STATE["extrema_text"] = extrema_text
 
@@ -1451,21 +1554,21 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     ]
     set_viewer_controls_state(False)
 
-    status = tk.Label(frm, text="", anchor="w", justify="left", fg="blue", font=emphasis_font)
+    status = tk.Label(frm, text="", anchor="w", justify="left", fg="blue", bg=app_bg, font=emphasis_font)
     status.grid(row=4, column=0, columnspan=2, sticky="we", pady=(4, 0))
     APP_STATE["status_label"] = status
 
-    button_bar = tk.Frame(frm)
-    button_bar.grid(row=5, column=0, columnspan=2, sticky="we", pady=(10, 0))
+    button_bar = tk.Frame(root, padx=12, pady=10, background=app_bg)
+    button_bar.pack(side="bottom", fill="x")
 
     def run_clicked():
         selected_file = entry_file.get().strip()
         selected_mwfn = entry_mwfn.get().strip()
-        selected_nproc = entry_nproc.get().strip() or "4"
-        selected_mode = mode_var.get().strip()
-        selected_vis = vis_var.get().strip()
-        selected_pregen = preg_var.get()
-        selected_cp = entry_cp.get().strip()
+        selected_nproc = str(default_nproc).strip() or "4"
+        selected_mode = str(default_mode).strip()
+        selected_vis = str(default_vis).strip()
+        selected_pregen = bool(default_pregen)
+        selected_cp = str(default_cp).strip()
 
         if not selected_file:
             messagebox.showerror("Error", "Please select an input .wfn/.wfx/.fchk file.")
@@ -1491,8 +1594,72 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
             update_status("Failed.", "red")
             messagebox.showerror("Execution error", str(e))
 
-    tk.Button(button_bar, text="Run VisMap", command=run_clicked, width=18, height=2, font=section_font).pack(side="left")
-    tk.Button(button_bar, text="Quit", command=root.destroy, width=12).pack(side="right")
+    run_button = tk.Button(
+        input_box,
+        text="Run VisMap",
+        image=run_icon,
+        compound="left",
+        command=run_clicked,
+        width=140,
+        height=44,
+        font=section_font,
+        padx=10,
+        anchor="center",
+        bg=accent_bg,
+        fg=action_fg,
+        activebackground=action_bg,
+        activeforeground=action_fg,
+    )
+    run_button.grid(row=0, column=2, rowspan=4, sticky="ne", padx=(14, 0))
+    quit_button = tk.Button(button_bar, text="Quit", command=root.destroy, width=12)
+    quit_button.pack(side="right")
+
+    def _style_button(btn, accent=False):
+        try:
+            if accent:
+                btn.configure(
+                    bg=accent_bg,
+                    fg=action_fg,
+                    activebackground=action_bg,
+                    activeforeground=action_fg,
+                    disabledforeground="#d7e1ee",
+                )
+            else:
+                btn.configure(
+                    bg="#e6e6e6",
+                    fg="#000000",
+                    activebackground="#d9d9d9",
+                    activeforeground="#000000",
+                    disabledforeground=muted_fg,
+                )
+            btn.configure(
+                relief="flat",
+                borderwidth=0,
+                highlightthickness=0,
+                cursor="hand2",
+            )
+        except Exception:
+            pass
+
+    for btn in [
+        browse_file_btn, browse_mwfn_btn, apply_btn, esp_apply_btn, bg_btn, label_btn,
+        save_btn, copy_btn, reset_btn, close_btn, gen_btn, scan_btn, clear_btn,
+        kill_btn, del_btn, sync_btn, quit_button,
+    ]:
+        _style_button(btn)
+    _style_button(run_button, accent=True)
+
+    for widget in [input_box, action_box, surface_box, range_box, appearance_box, quick_box, main_area, extrema_actions, filter_box, edit_box]:
+        try:
+            widget.configure(bg=panel_bg, fg=title_fg, bd=1, relief="solid", highlightbackground=border_color, highlightcolor=border_color)
+        except Exception:
+            pass
+
+    for widget in [left_tools, right_panel]:
+        try:
+            widget.configure(bg=panel_bg)
+        except Exception:
+            pass
 
     root.bind_all("<Control-c>", lambda _event: viewer_copy_to_clipboard())
     root.after(30, pump_viewer)
