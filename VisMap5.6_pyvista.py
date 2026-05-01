@@ -1626,9 +1626,9 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
                 )
             else:
                 btn.configure(
-                    bg="#e6e6e6",
+                    bg="#dcdad5",
                     fg="#000000",
-                    activebackground="#d9d9d9",
+                    activebackground="#eeebe7",
                     activeforeground="#000000",
                     disabledforeground=muted_fg,
                 )
