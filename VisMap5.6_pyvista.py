@@ -500,7 +500,6 @@ def pump_viewer():
             if plotter is None or getattr(plotter, "ren_win", None) is None:
                 _cleanup_viewer_state()
             else:
-                _set_scalar_bar_style(plotter)
                 plotter.update()
         except Exception:
             _cleanup_viewer_state()
@@ -1117,14 +1116,7 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
                 if ctrl and str(key).lower() == "c":
                     viewer_copy_to_clipboard()
 
-            def _resize_observer(_obj=None, _event=None):
-                _set_scalar_bar_style(plotter)
-
             vtk_interactor.AddObserver("KeyPressEvent", _ctrl_c_observer)
-            vtk_interactor.AddObserver("ConfigureEvent", _resize_observer)
-            ren_win = getattr(plotter, "ren_win", None)
-            if ren_win is not None:
-                ren_win.AddObserver("ModifiedEvent", _resize_observer)
         else:
             plotter.add_key_event("c", viewer_copy_to_clipboard)
     except Exception:
