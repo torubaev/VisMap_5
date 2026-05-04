@@ -576,18 +576,20 @@ def viewer_update_cmap(value):
     VIEWER_STATE["rebuild_surface"]()
 
 
-def viewer_toggle_atoms():
+def viewer_toggle_molecule_overlay():
     if VIEWER_STATE is None:
         return
-    VIEWER_STATE["state"]["show_atoms"] = bool(APP_STATE["show_atoms_var"].get())
-    VIEWER_STATE["build_atoms"]()
+    show_overlay = bool(APP_STATE["show_molecule_var"].get())
+    VIEWER_STATE["state"]["show_molecule_overlay"] = show_overlay
+    VIEWER_STATE["build_overlay_atoms"]()
+    VIEWER_STATE["build_overlay_bonds"]()
 
 
-def viewer_toggle_bonds():
+def viewer_update_molecule_opacity(value):
     if VIEWER_STATE is None:
         return
-    VIEWER_STATE["state"]["show_bonds"] = bool(APP_STATE["show_bonds_var"].get())
-    VIEWER_STATE["build_bonds"]()
+    VIEWER_STATE["state"]["overlay_opacity"] = float(value) / 100.0
+    VIEWER_STATE["update_overlay_opacity"]()
 
 
 def viewer_save_as():
@@ -860,14 +862,6 @@ def viewer_choose_label_color():
     VIEWER_STATE["apply_colors"]()
 
 
-def viewer_toggle_molecule_offset():
-    if VIEWER_STATE is None:
-        return
-    VIEWER_STATE["state"]["molecule_offset_mode"] = bool(APP_STATE["molecule_offset_var"].get())
-    VIEWER_STATE["build_atoms"]()
-    VIEWER_STATE["build_bonds"]()
-
-
 def viewer_reset():
 
     if not _viewer_is_alive():
@@ -884,13 +878,12 @@ def sync_main_controls_from_viewer():
         "isovalue_var",
         "opacity_scale",
         "cmap_var",
-        "show_atoms_var",
-        "show_bonds_var",
-        "molecule_offset_var",
         "suggested_range_var",
         "esp_range_hint_var",
         "esp_min_var",
         "esp_max_var",
+        "show_molecule_var",
+        "molecule_opacity_scale",
     }
     if not required_keys.issubset(APP_STATE):
         return
@@ -898,9 +891,8 @@ def sync_main_controls_from_viewer():
     APP_STATE["isovalue_var"].set(f"{state['isovalue']:.6g}")
     APP_STATE["opacity_scale"].set(int(round(state["opacity"] * 100.0)))
     APP_STATE["cmap_var"].set(VIEWER_STATE["cmap_list"][state["cmap_index"]])
-    APP_STATE["show_atoms_var"].set(state["show_atoms"])
-    APP_STATE["show_bonds_var"].set(state["show_bonds"])
-    APP_STATE["molecule_offset_var"].set(state.get("molecule_offset_mode", False))
+    APP_STATE["show_molecule_var"].set(state.get("show_molecule_overlay", False))
+    APP_STATE["molecule_opacity_scale"].set(int(round(state.get("overlay_opacity", 1.0) * 100.0)))
     APP_STATE["suggested_range_var"].set(
         f"Suggested density range: {VIEWER_STATE['dens_min']:.6g} to {VIEWER_STATE['dens_max']:.6g}"
     )
@@ -944,19 +936,34 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         "isovalue": 0.001,
         "opacity": 0.5,
         "cmap_index": 0,
-        "show_atoms": True,
-        "show_bonds": True,
-        "molecule_offset_mode": False,
+        "show_molecule_overlay": False,
+        "overlay_opacity": 1.0,
         "esp_min": esp_min_data,
         "esp_max": esp_max_data,
         "esp_use_custom_range": False,
         "surface_actor": None,
-        "atom_actors": [],
-        "bond_actors": [],
+        "overlay_atom_actors": [],
+        "overlay_bond_actors": [],
     }
 
     viewer_width, viewer_height = _viewer_window_size()
     plotter = pv.Plotter(window_size=(viewer_width, viewer_height))
+    main_renderer = plotter.renderer
+    overlay_renderer = None
+
+    try:
+        plotter.ren_win.SetNumberOfLayers(2)
+        overlay_renderer = pv._vtk.vtkRenderer()
+        overlay_renderer.SetLayer(1)
+        overlay_renderer.InteractiveOff()
+        overlay_renderer.SetViewport(0.0, 0.0, 1.0, 1.0)
+        try:
+            overlay_renderer.SetActiveCamera(main_renderer.GetActiveCamera())
+        except Exception:
+            overlay_renderer.SetActiveCamera(main_renderer.camera)
+        plotter.ren_win.AddRenderer(overlay_renderer)
+    except Exception:
+        overlay_renderer = None
 
     def _position_viewer_window():
         root = APP_STATE.get("root")
@@ -976,11 +983,77 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
     except Exception:
         pass
 
-    def _scaled_point(point, centroid, factor):
-        return centroid + (point - centroid) * factor
+    def _sync_overlay_camera():
+        if overlay_renderer is None:
+            return
+        try:
+            overlay_renderer.SetActiveCamera(main_renderer.GetActiveCamera())
+        except Exception:
+            try:
+                overlay_renderer.SetActiveCamera(main_renderer.camera)
+            except Exception:
+                pass
 
-    def _molecule_scale_factor():
-        return 1.06 if state.get("molecule_offset_mode") else 1.0
+    def _remove_overlay_actor(actor):
+        if actor is None:
+            return
+        if overlay_renderer is not None:
+            try:
+                overlay_renderer.RemoveActor(actor)
+                return
+            except Exception:
+                pass
+        try:
+            plotter.remove_actor(actor, render=False)
+        except Exception:
+            pass
+
+    def _make_overlay_actor(mesh, color):
+        if overlay_renderer is None:
+            actor = plotter.add_mesh(mesh, color=color, smooth_shading=False, lighting=False, render=False)
+            try:
+                actor.prop.opacity = float(state.get("overlay_opacity", 1.0))
+            except Exception:
+                pass
+            return actor
+        mapper = pv._vtk.vtkPolyDataMapper()
+        mapper.SetInputData(mesh)
+        actor = pv._vtk.vtkActor()
+        actor.SetMapper(mapper)
+        if isinstance(color, str):
+            color = (0.83, 0.83, 0.83)
+        prop = actor.GetProperty()
+        prop.SetColor(float(color[0]), float(color[1]), float(color[2]))
+        prop.SetOpacity(float(state.get("overlay_opacity", 1.0)))
+        try:
+            prop.LightingOff()
+        except Exception:
+            pass
+        try:
+            prop.SetInterpolationToFlat()
+        except Exception:
+            pass
+        overlay_renderer.AddActor(actor)
+        _sync_overlay_camera()
+        return actor
+
+    def _update_overlay_opacity():
+        opacity = float(state.get("overlay_opacity", 1.0))
+        for actor in state["overlay_atom_actors"] + state["overlay_bond_actors"]:
+            try:
+                actor.GetProperty().SetOpacity(opacity)
+            except Exception:
+                try:
+                    actor.prop.opacity = opacity
+                except Exception:
+                    pass
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    def _apply_molecule_overlay_positions():
+        _sync_overlay_camera()
 
     def apply_colors():
         bg_color, label_color = _get_viewer_colors()
@@ -1040,47 +1113,51 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         _set_scalar_bar_style(plotter)
         plotter.render()
 
-    def build_atoms():
-        for actor in state["atom_actors"]:
-            plotter.remove_actor(actor, render=False)
-        state["atom_actors"] = []
-        if not state["show_atoms"]:
+    def _bond_segment_points(i, j):
+        p1 = np.array(CENTERS[i][1:4], dtype=float)
+        p2 = np.array(CENTERS[j][1:4], dtype=float)
+        vec = p2 - p1
+        dist = np.linalg.norm(vec)
+        if dist <= 1.0e-12:
+            return p1, p2
+        unit = vec / dist
+        r1 = max(0.18, 0.28 * float(dnc2all[CENTERS[i][0]][1]))
+        r2 = max(0.18, 0.28 * float(dnc2all[CENTERS[j][0]][1]))
+        inset1 = min(r1 * 0.92, dist * 0.35)
+        inset2 = min(r2 * 0.92, dist * 0.35)
+        return p1 + unit * inset1, p2 - unit * inset2
+
+    def build_overlay_atoms():
+        for actor in state["overlay_atom_actors"]:
+            _remove_overlay_actor(actor)
+        state["overlay_atom_actors"] = []
+        if not state.get("show_molecule_overlay"):
             plotter.render()
             return
-        coords = np.array([atom[1:4] for atom in CENTERS], dtype=float)
-        centroid = np.mean(coords, axis=0) if len(coords) else np.zeros(3)
-        scale_factor = _molecule_scale_factor()
         for atom in CENTERS:
             center = np.array(atom[1:4], dtype=float)
-            if scale_factor != 1.0:
-                center = _scaled_point(center, centroid, scale_factor)
             radius = max(0.18, 0.28 * float(dnc2all[atom[0]][1]))
             color = tuple(float(c) for c in dnc2all[atom[0]][-3:])
             sphere = pv.Sphere(radius=radius, center=center, theta_resolution=28, phi_resolution=28)
-            actor = plotter.add_mesh(sphere, color=color, smooth_shading=True, render=False)
-            state["atom_actors"].append(actor)
+            actor = _make_overlay_actor(sphere, color)
+            state["overlay_atom_actors"].append(actor)
+        _apply_molecule_overlay_positions()
         plotter.render()
 
-    def build_bonds():
-        for actor in state["bond_actors"]:
-            plotter.remove_actor(actor, render=False)
-        state["bond_actors"] = []
-        if not state["show_bonds"]:
+    def build_overlay_bonds():
+        for actor in state["overlay_bond_actors"]:
+            _remove_overlay_actor(actor)
+        state["overlay_bond_actors"] = []
+        if not state.get("show_molecule_overlay"):
             plotter.render()
             return
-        coords = np.array([atom[1:4] for atom in CENTERS], dtype=float)
-        centroid = np.mean(coords, axis=0) if len(coords) else np.zeros(3)
-        scale_factor = _molecule_scale_factor()
         for i, j in bond_pairs:
-            p1 = np.array(CENTERS[i][1:4], dtype=float)
-            p2 = np.array(CENTERS[j][1:4], dtype=float)
-            if scale_factor != 1.0:
-                p1 = _scaled_point(p1, centroid, scale_factor)
-                p2 = _scaled_point(p2, centroid, scale_factor)
+            p1, p2 = _bond_segment_points(i, j)
             line = pv.Line(p1, p2, resolution=1)
-            tube = line.tube(radius=0.10)
-            actor = plotter.add_mesh(tube, color="lightgray", smooth_shading=True, render=False)
-            state["bond_actors"].append(actor)
+            tube = line.tube(radius=0.05)
+            actor = _make_overlay_actor(tube, (0.83, 0.83, 0.83))
+            state["overlay_bond_actors"].append(actor)
+        _apply_molecule_overlay_positions()
         plotter.render()
 
     VIEWER_STATE = {
@@ -1088,8 +1165,9 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         "plotter": plotter,
         "state": state,
         "rebuild_surface": rebuild_surface,
-        "build_atoms": build_atoms,
-        "build_bonds": build_bonds,
+        "build_overlay_atoms": build_overlay_atoms,
+        "build_overlay_bonds": build_overlay_bonds,
+        "update_overlay_opacity": _update_overlay_opacity,
         "apply_colors": apply_colors,
         "cmap_list": cmap_list,
         "dens_min": dens_min,
@@ -1101,6 +1179,11 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         "extrema_points_actor": None,
         "extrema_labels_actor": None,
     }
+
+    try:
+        plotter.add_on_render_callback(lambda _plotter: _apply_molecule_overlay_positions(), render_event=True)
+    except Exception:
+        pass
 
     try:
         interactor = getattr(plotter, "iren", None)
@@ -1124,8 +1207,8 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
 
     apply_colors()
     rebuild_surface()
-    build_atoms()
-    build_bonds()
+    build_overlay_atoms()
+    build_overlay_bonds()
     if APP_STATE.get("root") is None:
         plotter.show(title="VisMap PyVista Viewer", auto_close=False)
     else:
@@ -1401,9 +1484,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     APP_STATE["esp_min_var"] = tk.StringVar(value="-50")
     APP_STATE["esp_max_var"] = tk.StringVar(value="50")
     APP_STATE["cmap_var"] = tk.StringVar(value="gist_rainbow")
-    APP_STATE["show_atoms_var"] = tk.BooleanVar(value=True)
-    APP_STATE["show_bonds_var"] = tk.BooleanVar(value=True)
-    APP_STATE["molecule_offset_var"] = tk.BooleanVar(value=False)
+    APP_STATE["show_molecule_var"] = tk.BooleanVar(value=False)
     APP_STATE["kill_value_var"] = tk.StringVar(value="0.0")
     APP_STATE["kill_pm_var"] = tk.StringVar(value="1.0")
     APP_STATE["bg_color_var"] = tk.StringVar(value="black")
@@ -1430,6 +1511,29 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     cmap_menu = tk.OptionMenu(surface_box, APP_STATE["cmap_var"], "gist_rainbow", "turbo", "coolwarm", "RdBu_r", "plasma", "viridis", command=viewer_update_cmap)
     cmap_menu.grid(row=2, column=1, sticky="w")
 
+    molecule_cb = tk.Checkbutton(
+        surface_box,
+        text="Show molecule over ESP",
+        variable=APP_STATE["show_molecule_var"],
+        command=viewer_toggle_molecule_overlay,
+    )
+    molecule_cb.grid(row=3, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+    tk.Label(surface_box, text="Molecule opacity", font=subsection_font).grid(row=4, column=0, sticky="w", pady=(8, 0))
+    molecule_opacity_scale = tk.Scale(
+        surface_box,
+        from_=0,
+        to=100,
+        orient="horizontal",
+        resolution=1,
+        command=viewer_update_molecule_opacity,
+        showvalue=True,
+        length=210,
+    )
+    molecule_opacity_scale.set(100)
+    molecule_opacity_scale.grid(row=4, column=1, columnspan=2, sticky="we", pady=(8, 0))
+    APP_STATE["molecule_opacity_scale"] = molecule_opacity_scale
+
     range_box = tk.LabelFrame(action_box, text="ESP scale bar", padx=10, pady=8, font=subsection_font, labelanchor="nw")
     range_box.grid(row=0, column=1, sticky="nsew", pady=(0, 10))
     range_box.grid_columnconfigure(1, weight=1)
@@ -1453,17 +1557,10 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     for idx in range(2):
         appearance_box.grid_columnconfigure(idx, weight=1)
 
-    atoms_cb = tk.Checkbutton(appearance_box, text="Show atoms", variable=APP_STATE["show_atoms_var"], command=viewer_toggle_atoms)
-    atoms_cb.grid(row=0, column=0, sticky="w")
-    bonds_cb = tk.Checkbutton(appearance_box, text="Show bonds", variable=APP_STATE["show_bonds_var"], command=viewer_toggle_bonds)
-    bonds_cb.grid(row=0, column=1, sticky="w")
-    offset_cb = tk.Checkbutton(appearance_box, text="Molecule level-up mode", variable=APP_STATE["molecule_offset_var"], command=viewer_toggle_molecule_offset)
-    offset_cb.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
-
     bg_btn = tk.Button(appearance_box, text="Background color", command=viewer_choose_background_color, width=16)
-    bg_btn.grid(row=2, column=0, sticky="w", pady=(10, 0))
+    bg_btn.grid(row=0, column=0, sticky="w")
     label_btn = tk.Button(appearance_box, text="Labels color", command=viewer_choose_label_color, width=16)
-    label_btn.grid(row=2, column=1, sticky="w", pady=(10, 0))
+    label_btn.grid(row=0, column=1, sticky="w")
 
     quick_box = tk.LabelFrame(action_box, text="Quick actions", padx=10, pady=8, font=subsection_font, labelanchor="nw")
     quick_box.grid(row=1, column=1, sticky="nsew")
@@ -1541,7 +1638,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
 
     APP_STATE["viewer_controls"] = [
         isovalue_entry, apply_btn, esp_min_entry, esp_max_entry, esp_apply_btn, opacity_scale, cmap_menu,
-        atoms_cb, bonds_cb, offset_cb, bg_btn, label_btn, save_btn, copy_btn, reset_btn, close_btn,
+        molecule_cb, molecule_opacity_scale, bg_btn, label_btn, save_btn, copy_btn, reset_btn, close_btn,
         gen_btn, scan_btn, clear_btn, kill_value_entry, kill_pm_entry, kill_btn, del_btn, sync_btn
     ]
     set_viewer_controls_state(False)
