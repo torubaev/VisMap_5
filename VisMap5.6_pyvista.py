@@ -39,6 +39,188 @@ DEFAULT_MULTIWFN_PATHS = [
 
 Multiwfnpath = DEFAULT_MULTIWFN_PATHS[0]
 
+
+def configure_pyvista_defaults(pv_module, plotter, background="white", parallel_projection=True, antialiasing="msaa", extent=1.0):
+    """Apply the default PyVista viewer quality/lighting used by 3Dview.py."""
+    try:
+        pv_module.global_theme.multi_samples = 16
+    except Exception:
+        pass
+
+    try:
+        pv_module.global_theme.smooth_shading = True
+    except Exception:
+        pass
+
+    try:
+        plotter.set_background(background)
+    except Exception:
+        try:
+            plotter.set_background("white")
+        except Exception:
+            pass
+
+    try:
+        plotter.enable_anti_aliasing(antialiasing)
+    except Exception:
+        pass
+
+    try:
+        plotter.enable_depth_peeling(number_of_peels=8, occlusion_ratio=0.0)
+    except Exception:
+        pass
+
+    try:
+        plotter.renderer.SetTwoSidedLighting(True)
+    except Exception:
+        pass
+
+    if parallel_projection:
+        try:
+            plotter.enable_parallel_projection()
+        except Exception:
+            pass
+
+    try:
+        plotter.remove_all_lights()
+    except Exception:
+        pass
+
+    try:
+        extent = max(float(extent), 1.0)
+    except Exception:
+        extent = 1.0
+
+    light_specs = [
+        ("headlight", None, 0.95),
+        ("camera light", None, 0.45),
+        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.35),
+        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.25),
+    ]
+
+    for light_type, position, intensity in light_specs:
+        try:
+            if light_type in {"headlight", "camera light"}:
+                light = pv_module.Light(light_type=light_type)
+            else:
+                light = pv_module.Light(
+                    position=position,
+                    focal_point=(0.0, 0.0, 0.0),
+                    color="white",
+                    light_type="scene light",
+                )
+            light.intensity = intensity
+            plotter.add_light(light)
+        except Exception:
+            pass
+
+
+
+
+def configure_molecule_renderer_lights(pv_module, renderer, extent=1.0):
+    try:
+        renderer.RemoveAllLights()
+    except Exception:
+        pass
+
+    try:
+        extent = max(float(extent), 1.0)
+    except Exception:
+        extent = 1.0
+
+    light_specs = [
+        ("headlight", None, 0.95),
+        ("camera light", None, 0.45),
+        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.35),
+        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.25),
+    ]
+
+    for light_type, position, intensity in light_specs:
+        try:
+            if light_type in {"headlight", "camera light"}:
+                light = pv_module.Light(light_type=light_type)
+            else:
+                light = pv_module.Light(
+                    position=position,
+                    focal_point=(0.0, 0.0, 0.0),
+                    color="white",
+                    light_type="scene light",
+                )
+            light.intensity = intensity
+            renderer.AddLight(light)
+        except Exception:
+            pass
+
+
+ELEMENT_COLORS = {
+    "H": "#F2F2F2", "C": "#5A5A5A", "N": "#3050F8", "O": "#FF0D0D",
+    "F": "#90E050", "P": "#FF8000", "S": "#FFFF30", "Cl": "#1FF01F",
+    "Br": "#A62929", "I": "#940094", "B": "#FFB5B5", "Si": "#F0C8A0",
+    "Pd": "#006985", "Pt": "#D0D0E0", "Ru": "#248F8F", "Rh": "#0A7D8C",
+    "Ir": "#175487", "Fe": "#E06633", "Co": "#F090A0", "Ni": "#50D050",
+    "Cu": "#C88033", "Zn": "#7D80B0", "Ag": "#C0C0C0", "Au": "#FFD123",
+    "Hg": "#B8B8D0", "Li": "#CC80FF", "Na": "#AB5CF2", "K": "#8F40D4",
+    "Mg": "#8AFF00", "Ca": "#3DFF00", "Al": "#BFA6A6", "Sn": "#668080",
+    "Pb": "#575961",
+}
+
+FALLBACK_COVALENT_RADII = {
+    "H": 0.31, "B": 0.84, "C": 0.76, "N": 0.71, "O": 0.66, "F": 0.57,
+    "P": 1.07, "S": 1.05, "Cl": 1.02, "Br": 1.20, "I": 1.39, "Si": 1.11,
+    "Pd": 1.39, "Pt": 1.36, "Ru": 1.46, "Rh": 1.42, "Ir": 1.41,
+    "Fe": 1.32, "Co": 1.26, "Ni": 1.24, "Cu": 1.32, "Zn": 1.22,
+    "Ag": 1.45, "Au": 1.36, "Hg": 1.32, "Li": 1.28, "Na": 1.66, "K": 2.03,
+    "Mg": 1.41, "Ca": 1.76, "Al": 1.21, "Sn": 1.39, "Pb": 1.46,
+}
+
+
+def hex_to_rgb01(hex_color):
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+
+
+def molecule_material_parameters():
+    return {
+        "ambient": 0.50,
+        "diffuse": 0.62,
+        "specular": 0.18,
+        "specular_power": 20,
+    }
+
+
+def display_atom_radius_from_number(atomic_number):
+    try:
+        symbol = dnc2all[int(atomic_number)][0]
+    except Exception:
+        symbol = ""
+    covalent = FALLBACK_COVALENT_RADII.get(symbol, 0.77)
+    return float(np.clip(covalent * 0.42, 0.16, 0.55))
+
+
+def atom_color_from_number(atomic_number):
+    try:
+        symbol = dnc2all[int(atomic_number)][0]
+    except Exception:
+        symbol = ""
+    return hex_to_rgb01(ELEMENT_COLORS.get(symbol, "#FF69B4"))
+
+
+def cylinder_between(pv_module, p1, p2, radius=0.075, resolution=48):
+    p1 = np.asarray(p1, dtype=float)
+    p2 = np.asarray(p2, dtype=float)
+    vector = p2 - p1
+    length = float(np.linalg.norm(vector))
+    if length <= 1.0e-8:
+        return None
+    return pv_module.Cylinder(
+        center=tuple((p1 + p2) / 2.0),
+        direction=tuple(vector / length),
+        radius=radius,
+        height=length,
+        resolution=resolution,
+        capping=True,
+    )
+
 # dictionary of (nuclear_charge : Nucleus, vdW radii in Angstroms)
 dnc2all = {1: ['H', 1.09, 0.23, 1.00794, 0.99609375, 0.9765625, 0.80078125],
            2: ['He', 1.40, 1.50, 4.002602, 0.72265625, 0.82421875, 0.9296875],
@@ -687,7 +869,7 @@ def _extrema_to_lines(points):
 def _get_viewer_colors():
     bg = APP_STATE.get("bg_color_var")
     label = APP_STATE.get("label_color_var")
-    return (bg.get() if bg else "black", label.get() if label else "white")
+    return (bg.get() if bg else "white", label.get() if label else "black")
 
 
 def _parse_extrema_lines_from_widget():
@@ -947,6 +1129,7 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
     }
 
     viewer_width, viewer_height = _viewer_window_size()
+    bounds_extent = float(np.linalg.norm([xx.max() - xx.min(), yy.max() - yy.min(), zz.max() - zz.min()]))
     plotter = pv.Plotter(window_size=(viewer_width, viewer_height))
     main_renderer = plotter.renderer
     overlay_renderer = None
@@ -961,6 +1144,7 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
             overlay_renderer.SetActiveCamera(main_renderer.GetActiveCamera())
         except Exception:
             overlay_renderer.SetActiveCamera(main_renderer.camera)
+        configure_molecule_renderer_lights(pv, overlay_renderer, bounds_extent)
         plotter.ren_win.AddRenderer(overlay_renderer)
     except Exception:
         overlay_renderer = None
@@ -978,11 +1162,6 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
                 ren_win.SetPosition(viewer_x, viewer_y)
         except Exception:
             pass
-    try:
-        plotter.enable_anti_aliasing("msaa")
-    except Exception:
-        pass
-
     def _sync_overlay_camera():
         if overlay_renderer is None:
             return
@@ -1009,8 +1188,9 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
             pass
 
     def _make_overlay_actor(mesh, color):
+        material = molecule_material_parameters()
         if overlay_renderer is None:
-            actor = plotter.add_mesh(mesh, color=color, smooth_shading=False, lighting=False, render=False)
+            actor = plotter.add_mesh(mesh, color=color, smooth_shading=True, lighting=True, render=False, **material)
             try:
                 actor.prop.opacity = float(state.get("overlay_opacity", 1.0))
             except Exception:
@@ -1026,11 +1206,12 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         prop.SetColor(float(color[0]), float(color[1]), float(color[2]))
         prop.SetOpacity(float(state.get("overlay_opacity", 1.0)))
         try:
-            prop.LightingOff()
-        except Exception:
-            pass
-        try:
-            prop.SetInterpolationToFlat()
+            prop.LightingOn()
+            prop.SetInterpolationToPhong()
+            prop.SetAmbient(float(material["ambient"]))
+            prop.SetDiffuse(float(material["diffuse"]))
+            prop.SetSpecular(float(material["specular"]))
+            prop.SetSpecularPower(float(material["specular_power"]))
         except Exception:
             pass
         overlay_renderer.AddActor(actor)
@@ -1136,9 +1317,9 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
             return
         for atom in CENTERS:
             center = np.array(atom[1:4], dtype=float)
-            radius = max(0.18, 0.28 * float(dnc2all[atom[0]][1]))
-            color = tuple(float(c) for c in dnc2all[atom[0]][-3:])
-            sphere = pv.Sphere(radius=radius, center=center, theta_resolution=28, phi_resolution=28)
+            radius = display_atom_radius_from_number(atom[0])
+            color = atom_color_from_number(atom[0])
+            sphere = pv.Sphere(radius=radius, center=center, theta_resolution=64, phi_resolution=64)
             actor = _make_overlay_actor(sphere, color)
             state["overlay_atom_actors"].append(actor)
         _apply_molecule_overlay_positions()
@@ -1153,10 +1334,14 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
             return
         for i, j in bond_pairs:
             p1, p2 = _bond_segment_points(i, j)
-            line = pv.Line(p1, p2, resolution=1)
-            tube = line.tube(radius=0.05)
-            actor = _make_overlay_actor(tube, (0.83, 0.83, 0.83))
-            state["overlay_bond_actors"].append(actor)
+            midpoint = (np.asarray(p1, dtype=float) + np.asarray(p2, dtype=float)) / 2.0
+            colors = (atom_color_from_number(CENTERS[i][0]), atom_color_from_number(CENTERS[j][0]))
+            for a, b, color in ((p1, midpoint, colors[0]), (midpoint, p2, colors[1])):
+                cylinder = cylinder_between(pv, a, b)
+                if cylinder is None:
+                    continue
+                actor = _make_overlay_actor(cylinder, color)
+                state["overlay_bond_actors"].append(actor)
         _apply_molecule_overlay_positions()
         plotter.render()
 
@@ -1487,8 +1672,8 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     APP_STATE["show_molecule_var"] = tk.BooleanVar(value=False)
     APP_STATE["kill_value_var"] = tk.StringVar(value="0.0")
     APP_STATE["kill_pm_var"] = tk.StringVar(value="1.0")
-    APP_STATE["bg_color_var"] = tk.StringVar(value="black")
-    APP_STATE["label_color_var"] = tk.StringVar(value="white")
+    APP_STATE["bg_color_var"] = tk.StringVar(value="white")
+    APP_STATE["label_color_var"] = tk.StringVar(value="black")
 
     surface_box = tk.LabelFrame(action_box, text="Surface", padx=10, pady=8, font=subsection_font, labelanchor="nw")
     surface_box.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=(0, 10))
